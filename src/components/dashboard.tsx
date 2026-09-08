@@ -868,7 +868,7 @@ export default function Dashboard() {
           </label>
           <label>
             Destination
-            <select name="destination">
+            <select aria-label="Destination" name="destination">
               {Object.entries(DESTINATIONS).map(([id, d]) => (
                 <option key={id} value={id}>
                   {d.city}, {d.state} · {d.zip}
@@ -878,7 +878,7 @@ export default function Dashboard() {
           </label>
           <label>
             Product
-            <select name="sku">
+            <select aria-label="Product" name="sku">
               {PRODUCTS.filter((p) => p.sku !== 'LAB-001').map((p) => (
                 <option key={p.sku} value={p.sku}>
                   {p.name} · {p.sku}
@@ -933,6 +933,7 @@ export default function Dashboard() {
           <label>
             Warehouse
             <select
+              aria-label="Warehouse"
               value={overrideWarehouse}
               onChange={(e) => setOverrideWarehouse(e.target.value as WarehouseId)}
             >
