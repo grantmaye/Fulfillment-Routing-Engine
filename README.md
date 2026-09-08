@@ -6,6 +6,8 @@ An operations dashboard that chooses between Buffalo and Reno by checking stock 
 
 Built with **Next.js, TypeScript, Node.js, Apollo Server, GraphQL, and PostgreSQL**. The interface is called **Dispatch**.
 
+![Dispatch order queue and warehouse comparison](docs/images/dashboard.png)
+
 ## Why this exists
 
 A second warehouse turns a simple fulfillment process into a recurring decision: which location has the complete order, and what will it cost to ship from each one? This project reconstructs a workflow I previously automated with WordPress, PHP, REST APIs, and a carrier shipping calculator.
