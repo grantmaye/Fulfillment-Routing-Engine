@@ -1,0 +1,44 @@
+{
+  "name": "fulfillment-routing-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Warehouse allocation with explainable shipping comparisons and transactional stock reservations.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:postgres": "node --import tsx --test tests/postgres.integration.ts",
+    "check": "npm run typecheck && npm test",
+    "db:reset": "node --import tsx scripts/reset.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@apollo/server": "^5.5.1",
+    "@electric-sql/pglite": "^0.5.8",
+    "graphql": "^16.14.2",
+    "lucide-react": "^1.43.0",
+    "next": "^16.3.4",
+    "pg": "^8.23.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.5.0",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  },
+  "type": "module"
+}

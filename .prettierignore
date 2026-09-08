@@ -1,0 +1,7 @@
+.next
+.data
+node_modules
+package-lock.json
+next-env.d.ts
+test-results
+private
