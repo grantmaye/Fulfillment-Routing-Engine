@@ -52,6 +52,8 @@ Install and build before the interview. The running default demo does not call e
 
 ## A five-minute walkthrough
 
+For a concise spoken explanation and the exact files to open, see the [interview walkthrough](docs/INTERVIEW-WALKTHROUGH.md). It identifies the Node.js backend, React frontend, transaction boundary, and the distinction between displayed transit estimates and the cost-based selection policy.
+
 | Order   | Scenario                                           | Expected behavior                           |
 | ------- | -------------------------------------------------- | ------------------------------------------- |
 | FR-1041 | New York, both warehouses stocked                  | Buffalo has the lower simulated cost        |
