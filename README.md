@@ -8,9 +8,21 @@ Built with **Next.js, TypeScript, Node.js, Apollo Server, GraphQL, and PostgreSQ
 
 ![Dispatch order queue and warehouse comparison](docs/images/dashboard.png)
 
+## Start here
+
+**Problem:** choose a warehouse without overselling stock, and make the decision explainable to an operator.
+
+**Working flow:** compare eligible warehouses, reserve the full order, inspect the decision, override with a reason, and cancel to release stock.
+
+- [Run the local demo](#run-the-demo) and follow the [five-minute walkthrough](#a-five-minute-walkthrough).
+- Review the [routing service](src/lib/routing.ts) and [transaction design](docs/architecture.md).
+- Inspect [routing and rollback tests](tests/routing.test.ts), the [separate-connection PostgreSQL test](tests/postgres.integration.ts), and [browser workflows](tests/e2e/dashboard.spec.ts). [CI results](https://github.com/grantmaye/Fulfillment-Routing-Engine/actions/workflows/ci.yml) show the status of each run.
+
+**Scope:** fictional orders and simulated rates; no carrier integration or real authentication. See [deliberate boundaries](#deliberate-boundaries).
+
 ## Why this exists
 
-A second warehouse turns a simple fulfillment process into a recurring decision: which location has the complete order, and what will it cost to ship from each one? This project reconstructs a workflow I previously automated with WordPress, PHP, REST APIs, and a carrier shipping calculator.
+A second warehouse turns a simple fulfillment process into a recurring decision: which location has the complete order, and what will it cost to ship from each one? This independent portfolio project explores that decision with a runnable operations interface and transactional stock reservations.
 
 This is a new implementation of that business problem. It contains no former employer code, branding, customer records, credentials, or carrier integration. All customer names, stock quantities, and shipping rates are fictional.
 
