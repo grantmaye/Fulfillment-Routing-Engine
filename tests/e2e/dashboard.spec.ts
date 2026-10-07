@@ -52,3 +52,18 @@ test('stock shortage, quote failure, audit trail and last-unit race', async ({ p
   await page.getByRole('button', { name: 'Activity log', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Decision trail' })).toBeVisible();
 });
+
+test('HTTP origin checks allow the current host and reject a foreign origin', async ({
+  request,
+  baseURL,
+}) => {
+  const data = { query: '{ products { sku } }' };
+  const allowed = await request.post('/api/graphql', { headers: { origin: baseURL! }, data });
+  expect(allowed.status()).toBe(200);
+  expect((await allowed.json()).data.products).toHaveLength(5);
+  const rejected = await request.post('/api/graphql', {
+    headers: { origin: 'https://unrelated.example' },
+    data,
+  });
+  expect(rejected.status()).toBe(403);
+});

@@ -158,4 +158,4 @@ Use the same cookie file for subsequent operations. Cookie files grant access to
 
 Expected business errors use `BAD_USER_INPUT`, `NOT_FOUND`, or `CONFLICT` in `errors[].extensions.code`. Check the GraphQL response's `errors` even when HTTP status is 200. Stock shortages and incomplete quote comparisons are valid review outcomes, not transport errors.
 
-The API accepts one top-level mutation per request. Fragments, batched HTTP operations, and streaming responses are not supported. The schema is intentionally small, with a 200-field operation limit and up to 100 regular orders per workspace. Use introspection to explore its types.
+The API accepts one top-level mutation per request. Fragments, batched HTTP operations, and streaming responses are not supported. The schema is intentionally small, with a 200-field operation limit and up to 100 total orders per workspace (including the two concurrency-demo orders). Use introspection to explore its types.

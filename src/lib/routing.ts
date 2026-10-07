@@ -357,6 +357,14 @@ export class RoutingService {
   }
   async race(sessionId: string) {
     const orders = await this.locked(sessionId, async (tx) => {
+      const [{ count }] = await tx.query<{ count: number }>(
+        'SELECT count(*)::int AS count FROM orders WHERE session_id=$1',
+        [sessionId],
+      );
+      if (count > 98)
+        throw new RoutingError(
+          'The last-unit demo needs room for two orders. Reset the workspace.',
+        );
       const [{ available }] = await tx.query<{ available: number }>(
         "SELECT on_hand-reserved AS available FROM inventory WHERE session_id=$1 AND warehouse_id='BUF' AND sku='LAB-001'",
         [sessionId],
