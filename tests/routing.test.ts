@@ -230,3 +230,65 @@ test('GraphQL dashboard, nested relationships, mutation errors and budget', asyn
     await api.stop();
   }
 });
+
+test('audit failure rolls back all item reservations and the saved order', async () => {
+  const before = await service.dashboard(session);
+  const failingDb: Database = {
+    ...db,
+    transaction: (work) =>
+      db.transaction((tx) =>
+        work({
+          query: async <T>(sql: string, params?: unknown[]): Promise<T[]> => {
+            if (sql.startsWith('INSERT INTO audit_events'))
+              throw new Error('Injected audit failure');
+            return tx.query<T>(sql, params);
+          },
+        }),
+      ),
+  };
+  await assert.rejects(
+    () => new RoutingService(failingDb).route(session, 'FR-1046'),
+    /Injected audit failure/,
+  );
+  assert.deepEqual(await service.dashboard(session), before);
+});
+
+test('cancellation during a slow quote cannot be overwritten by allocation', async () => {
+  let release!: () => void;
+  let started!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const quoting = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const slow = new RoutingService(db, () => ({
+    quote: async () => {
+      started();
+      await gate;
+      return { costCents: 1000, transitDays: 2, distanceMiles: 50 };
+    },
+  }));
+  const pending = slow.route(session, 'FR-1046');
+  await quoting;
+  await service.cancel(session, 'FR-1046');
+  release();
+  await assert.rejects(pending, /Cancelled/);
+  const result = await service.dashboard(session);
+  assert.equal(result.orders.find((order) => order.id === 'FR-1046')!.status, 'CANCELLED');
+  assert.ok(result.inventory.every((row) => row.reserved === 0));
+});
+
+test('last-unit demo respects the shared 100-order workspace limit atomically', async () => {
+  for (let index = 0; index < 93; index++) {
+    await service.createOrder(session, {
+      customer: 'Capacity fixture',
+      destinationId: 'NYC',
+      items: [{ sku: 'PH-100', quantity: 1 }],
+    });
+  }
+  const before = await service.dashboard(session);
+  assert.equal(before.orders.length, 99);
+  await assert.rejects(() => service.race(session), /room for two orders/);
+  assert.deepEqual(await service.dashboard(session), before);
+});

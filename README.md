@@ -20,6 +20,11 @@ Built with **Next.js, TypeScript, Node.js, Apollo Server, GraphQL, and PostgreSQ
 
 **Scope:** fictional orders and simulated rates; no carrier integration or real authentication. See [deliberate boundaries](#deliberate-boundaries).
 
+## Learn the project
+
+- [Technical manual](docs/technical-manual.md): setup, architecture, contracts, failure labs, extension exercises, and interview answers.
+- [Product story](docs/product-story.md): the hypothetical workflow, intended value, limitations, and a 60–90 second demo script.
+
 ## Why this exists
 
 A second warehouse turns a simple fulfillment process into a recurring decision: which location has the complete order, and what will it cost to ship from each one? This independent portfolio project explores that decision with a runnable operations interface and transactional stock reservations.
