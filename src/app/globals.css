@@ -1180,4 +1180,7 @@ form .button {
   }
 }
 
-.warehouse-region { font-size: 13px; color: var(--muted); }
+.warehouse-region {
+  font-size: 13px;
+  color: var(--muted);
+}
