@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/database';
 import { createApi } from '@/lib/graphql';
 import { RoutingService } from '@/lib/routing';
+import { hasAllowedOrigin } from '@/lib/request-origin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,11 +13,7 @@ const started = api.start();
 export async function POST(request: NextRequest) {
   if (!request.headers.get('content-type')?.startsWith('application/json'))
     return NextResponse.json({ error: 'Use application/json.' }, { status: 415 });
-  const origin = request.headers.get('origin');
-  // NextURL normalizes loopback IPs to localhost. Preserve the browser's Host
-  // when comparing origins so legitimate 127.0.0.1 requests remain same-origin.
-  const expectedOrigin = `${request.nextUrl.protocol}//${request.headers.get('host')}`;
-  if (origin && origin !== expectedOrigin)
+  if (!hasAllowedOrigin(request))
     return NextResponse.json({ error: 'Cross-origin requests are not allowed.' }, { status: 403 });
   const body = await request.text();
   if (body.length > 16000)

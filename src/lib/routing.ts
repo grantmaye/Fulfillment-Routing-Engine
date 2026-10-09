@@ -185,8 +185,10 @@ export class RoutingService {
         )
       ).map((r) => r.data),
       inventory: await inventoryFor(tx, sessionId),
+      // Qualify the numeric column: the output `id` is text for GraphQL and
+      // ORDER BY id would sort that alias lexically (9 before 10 or 100).
       events: await tx.query<AuditEvent>(
-        'SELECT id::text,id::text AS "eventId",order_id AS "orderId",action,detail,created_at::text AS "createdAt" FROM audit_events WHERE session_id=$1 ORDER BY id DESC LIMIT 100',
+        'SELECT id::text,id::text AS "eventId",order_id AS "orderId",action,detail,created_at::text AS "createdAt" FROM audit_events WHERE session_id=$1 ORDER BY audit_events.id DESC LIMIT 100',
         [sessionId],
       ),
       storageMode: this.db.mode,
