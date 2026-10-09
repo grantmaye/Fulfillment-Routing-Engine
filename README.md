@@ -22,6 +22,8 @@ Built with **Next.js, TypeScript, Node.js, Apollo Server, GraphQL, and PostgreSQ
 
 ## Learn the project
 
+Start with the [build-from-zero lesson](docs/technical-manual.md#10-build-it-from-zero-a-teaching-sequence), then [build the React/CSS interface](docs/technical-manual.md#11-build-the-interface-from-layout-to-interaction) and [trace FR-1041 from click to SQL](docs/technical-manual.md#12-follow-fr-1041-from-a-click-to-sql-and-back). The manual includes exercises with executable solutions and explains the demo's limits.
+
 - [Technical manual](docs/technical-manual.md): setup, architecture, contracts, failure labs, extension exercises, and interview answers.
 - [Product story](docs/product-story.md): the hypothetical workflow, intended value, limitations, and a 60–90 second demo script.
 
