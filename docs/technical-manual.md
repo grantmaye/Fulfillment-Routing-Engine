@@ -2,6 +2,10 @@
 
 This manual teaches the **Dispatch** demo from first run to maintenance. Read the [product story](product-story.md) for the problem it illustrates and the [interview walkthrough](INTERVIEW-WALKTHROUGH.md) for a shorter presentation. Source links below are the implementation, not claims about a production deployment.
 
+**Start learning here:** [first lesson and build sequence](#10-build-it-from-zero-a-teaching-sequence), then [build the UI](#11-build-the-interface-from-layout-to-interaction), then [trace FR-1041 end to end](#12-follow-fr-1041-from-a-click-to-sql-and-back), and [practice with solutions](#13-hands-on-exercises-with-solutions). Sections 1–9 remain the reference manual for running, operating, and extending the project.
+
+This is a reconstruction of how to build the **current code**, not a claim about the historical order in which it was written. You can learn the design without assuming it was deployed in production. Use a separate checkout, unused port, and separate data directory for experiments. Do not reset a workspace someone is using for a live walkthrough.
+
 ## 1. Vocabulary and first principles
 
 An **order** is a customer label, a sample destination, and one or more SKU/quantity lines. A **SKU** identifies a product. **On-hand** means physically counted stock in this model; **reserved** means promised to an allocated order. **Available** is `on_hand - reserved`. Allocation reserves stock; it does not purchase a label or ship goods.
@@ -161,7 +165,7 @@ The audit failure test wraps the transaction adapter and throws at INSERT INTO a
 
 ### Diagnose symptoms
 
-A 503 health response means database readiness failed; inspect the server log and connection/directory configuration first. A cross-origin 403 often means the browser/proxy origin does not match the effective server origin. Preserve the host consistently and check proxy configuration. A stale preview is expected under concurrent changes; route rechecks stock. A duplicate embedded server can lock or corrupt its files: stop duplicate processes and use a fresh data directory. Never delete a live shared database to fix a demo.
+A 503 health response means database readiness failed; inspect the server log and connection/directory configuration first. A cross-origin 403 means the browser origin must be compared with the request protocol and actual Host, including port; see [request-origin.ts](../src/lib/request-origin.ts). Both `localhost` and `127.0.0.1` work when the browser uses the same spelling for the page and its request. They are not interchangeable origins. A stale preview is expected under concurrent changes; route rechecks stock. A duplicate embedded server can lock or corrupt its files: stop duplicate processes and use a fresh data directory. Never delete a live shared database to fix a demo.
 
 ## 8. Design choices and extension exercises
 
@@ -187,3 +191,378 @@ A 503 health response means database readiness failed; inspect the server log an
 **What does the test suite prove?** Reproducible domain behavior, rollback, separate-connection contention in PostgreSQL, and browser flows. It does not prove arbitrary production load, real carrier correctness, or authenticated multitenancy.
 
 **What would you change first for production?** Establish real identity/data boundaries and external contracts, then normalized durable reservation ownership and migrations. Preserve the tested atomicity while adding operational limits; do not begin with cosmetic rewrites.
+
+## 10. Build it from zero: a teaching sequence
+
+### First lesson: separate a screen from a decision
+
+Start with a piece of paper. Draw two warehouse boxes and write “45 phones, 28 headsets” in Buffalo and “32 phones, 40 headsets” in Reno. Write FR-1041 beside them: four phones and two headsets to New York. Both boxes can cover the full order. Given quotes of $18.12 and $33.26, choose Buffalo. Cross out **available** 45/28 and replace it with 41/26. Do not change on-hand 45/28: the goods have been promised, not shipped.
+
+Now open three files side by side:
+
+1. [dashboard.tsx](../src/components/dashboard.tsx), the button with `act(() => routeOrder(selected.id), ...)`: what the person does.
+2. [client.ts](../src/lib/client.ts), `routeOrder`: what the browser asks the server to do.
+3. [routing.ts](../src/lib/routing.ts), `RoutingService.route`: what the server must verify before making a promise.
+
+The browser may display an old preview. The server must decide using current inventory. That distinction is the foundation of this project. You do not need to understand every React hook or SQL statement before understanding it.
+
+### Toolchain in plain language
+
+**JavaScript** runs the program. **TypeScript** adds types checked during development; those types disappear at runtime. **Node.js** runs JavaScript on the server. **React** turns state into interface elements. **Next.js** supplies the web server, file-based routes, React build pipeline, and production packaging. **npm** installs packages and runs the commands in package.json.
+
+**GraphQL** is the typed request language between browser and server. **Apollo Server** validates and executes that schema. It is not a separate deployed service here. **Zod** validates actual runtime input in the service, including callers that do not use GraphQL. **PostgreSQL** stores records and provides transactions; **pg** connects to a PostgreSQL server, while **PGlite** runs an embedded PostgreSQL engine. **Lucide React** supplies the icons. **Prettier** formats source. **tsx** lets Node execute the TypeScript tests. **Playwright** drives desktop and mobile browser tests.
+
+Use the checked-in [package.json](../package.json) and [package-lock.json](../package-lock.json), not a list of unpinned “latest” installs. The lockfile specifies resolved versions; `npm ci` reproduces them. Node must satisfy `>=22.13`; CI uses Node 22. A successful Node 24 local run does not replace that CI coverage.
+
+| Command                 | What it does                                                                 | When to use it                                           |
+| ----------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `npm ci`                | Installs the lockfile's dependency tree                                      | After cloning or dependency changes                      |
+| `npm run dev`           | Starts Next development mode                                                 | Editing and learning                                     |
+| `npm run build`         | Compiles the production app and checks types                                 | Before production-mode testing                           |
+| `npm start`             | Serves the existing production build                                         | Stable local walkthrough                                 |
+| `npm run typecheck`     | Runs TypeScript without emitting JS                                          | Catch mismatched types                                   |
+| `npm test`              | Executes `tests/*.test.ts` with Node + tsx                                   | Domain, API, origin and embedded audit checks            |
+| `npm run check`         | Typecheck followed by unit/service tests                                     | Normal pre-commit check                                  |
+| `npm run test:postgres` | Runs server-database integration tests                                       | Numeric audit history and separate-pool contention       |
+| `npm run test:e2e`      | Starts an isolated production server and runs browser tests                  | UI/HTTP regression checks                                |
+| `npm run format:check`  | Checks formatting without edits                                              | Before committing                                        |
+| `npm run format`        | Applies Prettier to the project                                              | Intentional formatting pass; inspect the diff            |
+| `npm run db:reset`      | Deletes all sessions in the configured database after its confirmation guard | Disposable databases only; not a troubleshooting default |
+
+There is no separate lint script, CSS framework, ORM, or client-side state library in this project.
+
+### Repository map
+
+```text
+src/app/layout.tsx          HTML shell, page metadata, global CSS import
+src/app/page.tsx            / route: renders Dashboard
+src/app/globals.css         design tokens, layout, components, responsive rules
+src/app/api/graphql/route.ts POST transport, cookie, Apollo execution
+src/app/api/health/route.ts database readiness
+src/components/dashboard.tsx all four views, dialogs, state, Metric helper
+src/lib/model.ts            types and catalog/destination/warehouse fixtures
+src/lib/shipping.ts         ShippingProvider interface and rate simulator
+src/lib/database.ts         SQL adapters and schema initialization
+src/lib/seed.ts             six initial orders and inventory
+src/lib/routing.ts          policy and transactional application service
+src/lib/graphql.ts          GraphQL schema, resolvers, limits and errors
+src/lib/client.ts           browser fetch and GraphQL operations
+src/lib/request-origin.ts   exact request-origin policy
+tests/                     service, audit, origin, PostgreSQL and browser tests
+scripts/reset.ts           explicit all-session reset utility
+docs/                      this manual, API, architecture, operations and walkthrough
+```
+
+[tsconfig.json](../tsconfig.json) enables strict TypeScript and maps `@/*` to `src/*`; this is why `@/lib/model` works. [next.config.ts](../next.config.ts) keeps pg/PGlite as server external packages and removes the X-Powered-By header. [playwright.config.ts](../playwright.config.ts) selects Chromium desktop and mobile profiles and uses `E2E_PORT`. [.github/workflows/ci.yml](../.github/workflows/ci.yml) provisions PostgreSQL 17 and runs formatting, types, tests, build, and browser checks. Build output, data, dependencies and environment files are ignored by [.gitignore](../.gitignore).
+
+### A sequence for rebuilding, with a checkpoint at each step
+
+Use a new learning folder; keep the working reference repository beside it. These are implementation milestones, not commands that automatically generate the complete product.
+
+1. **Create the skeleton.** Copy package.json, package-lock.json, tsconfig.json, next-env.d.ts and next.config.ts from the reference. Run `npm ci`. Add `src/app/layout.tsx`, `page.tsx` and a small globals.css. The layout returns `<html lang="en"><body>{children}</body></html>`; the page can initially render `<h1>Dispatch</h1>`. Checkpoint: `npm run dev -- --hostname 127.0.0.1 --port 3002` renders your heading. Stop only your learning process before using the same port for another server.
+2. **Name the domain.** Reconstruct model.ts: warehouse and destination IDs, products with weight, `LineItem`, `Inventory`, `Order`, `Candidate` and `Decision`. A TypeScript union such as `'PENDING' | 'ALLOCATED' | 'REVIEW' | 'CANCELLED'` restricts valid strings at compile time. Checkpoint: explain why an order needs both current `warehouseId` and a historical `decision`.
+3. **Make the price calculator pure.** Add shipping.ts. Its deterministic inputs are warehouse, destination and items. There is no fetch, account, or payment. Checkpoint: four phones plus two headsets produce BUF 1812 cents and RNO 3326 cents. Use the solution in section 13.
+4. **Make selection independent of persistence.** Add the `evaluate` function from routing.ts. Give it an order, inventory array and provider. Check stock before comparing quotes. Checkpoint: shortage gives no selection; a missing eligible quote gives an incomplete comparison; equal prices resolve to BUF. You can test this before creating any HTTP server.
+5. **Add durable data.** Implement the `Sql` and `Database` interfaces and both adapters in database.ts. Create the four tables, then seed.ts. SQL parameters such as `$1` hold values separately from SQL syntax. Checkpoint: a fresh in-memory database contains six orders and ten inventory rows; reserved is zero. Use test setup from routing.test.ts rather than the live demo database.
+6. **Add the transaction boundary.** Implement `locked`, `createOrder`, `route`, `cancel` and override handling. Never implement allocation as three independent API writes. Checkpoint: the rollback and last-unit tests pass; failed overrides leave the original allocation intact. Add the workspace cap and race helper only after ordinary order operations are correct.
+7. **Expose the service.** Add graphql.ts and the GraphQL route. A resolver is the function that implements a GraphQL field. Put policy in the service rather than in resolvers. Add the cookie and origin helper. Checkpoint: a query returns six orders and a mutation updates one; a foreign origin is rejected before any workspace initialization.
+8. **Build the browser adapter.** Add client.ts. Send JSON containing a query and variables using `fetch('/api/graphql')`; check HTTP failure and GraphQL `errors`. Checkpoint: a missing order produces a useful error, even when HTTP status is 200.
+9. **Build the UI in layers.** Follow section 11: static shell, read-only queue, selection and preview, mutation state, dialogs, then inventory/activity/guide views. Checkpoint: a route action reloads real server state and displays the saved decision. Do not pretend to allocate by incrementing local counters.
+10. **Make it usable at smaller widths.** Add responsive rules, keyboard focus, form labels and status messages. Checkpoint: the desktop and mobile browser suites pass without page overflow. A test pass is not a complete accessibility audit.
+11. **Add failure cases before polish.** Exercise missing stock, missing quotes, cancellation during a delayed quote, audit-write failure, and repeated commands. Checkpoint: tests verify unchanged state after rejected operations, not merely an exception message.
+12. **Package the result for review.** Build once, run tests against that build, inspect only intended diffs, and submit a draft PR. Keep demo data and environment files out of Git. CI passing is evidence for the tested commit, not a production certification.
+
+## 11. Build the interface from layout to interaction
+
+### The document and the client boundary
+
+[layout.tsx](../src/app/layout.tsx) is the document frame: English language, metadata, global CSS, and children. [page.tsx](../src/app/page.tsx) renders `<Dashboard />`. [dashboard.tsx](../src/components/dashboard.tsx) begins with `'use client'` because it uses state, effects, event handlers and native dialogs. That marks a client component; it does not mean every part of Next.js runs only in the browser.
+
+**JSX** is the HTML-like syntax inside TypeScript. `<Metric title="Allocated orders" ... />` calls a React component with **props** (inputs). JSX uses `className` instead of `class`, braces for JavaScript values, and `onClick` for event handlers. A `.tsx` file can contain both TypeScript and JSX. The small `Metric` component is reused four times; most other UI is intentionally in one Dashboard component. This makes the demo easy to inspect but is a maintenance tradeoff, not a recommendation to put every large application in one file.
+
+### Design from big boxes to small details
+
+Draw a fixed left navigation, a top bar, a heading/actions row, four metrics, then a two-column work area. Put the order table on the left and the selected order inspector on the right. Inventory needs warehouse tables; Activity needs a timeline; Guide needs scenario cards. All four views share one shell and dataset. They are state-selected views, not separate URL routes.
+
+The design uses ordinary CSS in [globals.css](../src/app/globals.css):
+
+```css
+:root {
+  --bg: #f7f8fa;
+  --ink: #202a34;
+  --muted: #7b8490;
+  --line: #e7eaee;
+  --orange: #de5a36;
+  --nav: #17212b;
+  --green: #268367;
+  --font: Arial, Helvetica, sans-serif;
+}
+```
+
+These **custom properties** are reusable design values. The light surface separates working content from dark navigation; orange marks the main action, and status badges use text as well as color. This is an explanation of the current visual choices, not a claim of a particular designer's historical process. Arial/Helvetica/system fallbacks require no external font fetch. Lucide components such as `Truck`, `Plus` and `GitBranch` render SVG icons.
+
+`box-sizing: border-box` includes borders/padding in declared widths. `.shell` uses flex layout; `.sidebar` is fixed at 228px on wide screens, and `main` makes room for it. `.content` bounds the workspace. `.metrics` uses `repeat(4, 1fr)` to create equal columns. `.orders-layout` uses `minmax(480px, 1.55fr) minmax(310px, 1fr)` so the queue gets more room than the inspector. `fr` means a fraction of the remaining grid space. Panels provide borders, white surfaces and spacing. Tables retain actual table markup rather than imitating rows with arbitrary divs.
+
+The draft's caption cleanup removes decorative labels such as “FULFILLMENT CONTROL” and “ROUTING INSPECTOR.” It preserves factual warehouse region text as `.warehouse-region`. This reduces repeated headings without removing the order ID, status, warehouse comparison or demo disclosure.
+
+### Responsive behavior is a set of layout decisions
+
+| CSS boundary    | What changes                                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| At least 1500px | Wider queue/inspector proportions and 32px heading                                                                     |
+| At most 1200px  | Sidebar shrinks to 195px; heading stacks; warehouse panels become one column; queue destination column hides           |
+| At most 850px   | Sidebar becomes an ordinary top block; navigation becomes horizontal; main loses its left margin; guide stacks         |
+| At most 650px   | Queue and inspector stack; metrics become two columns; queue destination column returns; typography and spacing shrink |
+
+The destination column returns on phones because the queue has its own full-width row above the inspector. That is an explicit choice in the stylesheet, not a framework default. On phones the inspector follows the queue, so you may need to scroll down to see the selected order. Test intermediate widths as well as one phone preset before making broad claims about responsiveness.
+
+### Understand the state before adding a button
+
+**State** is a value React remembers across renders. Updating it schedules another render; directly modifying a local variable does not update the screen. In Dashboard:
+
+| State/ref                             | Purpose                                                                |
+| ------------------------------------- | ---------------------------------------------------------------------- |
+| `data`                                | Latest server dashboard or null during initial load                    |
+| `tab`                                 | orders, inventory, activity or guide view                              |
+| `selectedId`                          | Which order to inspect; initially FR-1042                              |
+| `decision`, `previewing`              | Current advisory comparison or stored decision, plus loading state     |
+| `busy`                                | Disable conflicting controls while a mutation and refresh run          |
+| `notice`                              | Success/error text and alert style                                     |
+| `search`, `filter`                    | Local queue filtering                                                  |
+| `overrideWarehouse`, `overrideReason` | Controlled override form inputs                                        |
+| Three `useRef` dialog handles         | Access native `<dialog>` elements without storing DOM objects in state |
+
+`selected`, `allocated`, `pending`, `review`, shipping totals and visible rows are **derived** from data/state during rendering. Keeping them derived avoids synchronizing duplicate state manually. `refresh`, wrapped in `useCallback`, loads the dashboard and calls `setData`. A mount `useEffect` calls refresh. An **effect** runs work after React renders; it is used here to load data rather than during the render function itself.
+
+The selection effect uses a saved decision when one exists. Otherwise it requests a preview. Its cleanup sets `active = false`, so a slow response for a previously selected order cannot overwrite the current selection's display. This prevents a stale UI result, not the network request itself: there is no AbortController here. Previews do not reserve stock and are rechecked when routing.
+
+`act` is the common mutation wrapper. It sets busy, clears the old notice, awaits work, reloads the dashboard, shows success, handles errors and clears busy in `finally`. It is **not an optimistic update**: the UI does not assume a reservation before the server confirms it. A remaining limitation is that a mutation can commit successfully and its follow-up refresh can fail; the UI then reports an error even though the mutation committed. Re-reading the dashboard is the first debugging step. Repeating route/cancel is safe for an existing order; repeating create can create a second order because ingestion has no idempotency key.
+
+### Build forms deliberately
+
+The create dialog uses ordinary labeled inputs and `new FormData(form)`. On submit it prevents native navigation, reads values by `name`, converts quantity with `Number`, and sends GraphQL variables. It closes and resets only after `act` returns a result. This is largely an **uncontrolled form**: the browser owns the entered field values until submission.
+
+Override uses **controlled inputs**: `value` comes from React state and `onChange` updates that state. Its selected warehouse and explanation are kept together and sent as variables. `required`, `minLength`, `maxLength`, `min` and `max` provide browser feedback; the server repeats the important checks because browser validation is bypassable.
+
+The reset dialog describes its destructive effect and requires a separate click. Reset is a teaching tool, not something to run in a shared walkthrough to clear an error. No reset is necessary to inspect already saved decisions.
+
+### Loading, errors and accessibility
+
+Before data arrives, the UI shows a preparation message and disables actions. Failed initial load exposes Retry connection. Preview has its own progress state. Mutation controls use the shared busy flag. Notices use `role="alert"` for errors and `role="status"` for successful feedback; dialogs also show error text so a failed request does not hide behind the modal.
+
+There are named navigation and details regions, table headers, labeled form inputs, accessible names on icon buttons, visible `:focus-visible` outlines, and native `dialog.showModal()`/`close()` behavior. Reduced-motion CSS stops the spinner animation. Status words remain readable without color.
+
+Limits worth recognizing: there is no recorded screen-reader or contrast audit; the dialogs have visible headings but no explicit `aria-labelledby` associations; active navigation is styled but does not set `aria-current`; mobile text is quite small in some places. These are sensible future UI exercises. Do not claim WCAG compliance from the browser suite alone.
+
+## 12. Follow FR-1041 from a click to SQL and back
+
+This is a trace of a **fresh or equivalently restored fictional workspace**. Do not click someone else's pending order merely to follow the text. [walkthrough.test.ts](../tests/walkthrough.test.ts) checks the exact fixture math independently of a live browser.
+
+```mermaid
+sequenceDiagram
+  actor Person
+  participant UI as Dashboard / React
+  participant HTTP as POST /api/graphql
+  participant API as Apollo resolver
+  participant Service as RoutingService
+  participant DB as PostgreSQL
+  Person->>UI: Inspect FR-1041, Route this order
+  UI->>HTTP: routeOrder(id: FR-1041), session cookie
+  HTTP->>HTTP: Content type, origin, size, JSON checks
+  HTTP->>API: Execute with service + sessionId context
+  API->>Service: route(sessionId, id)
+  Service->>Service: Capture simulated BUF/RNO quotes
+  Service->>DB: BEGIN; lock workspace row
+  Service->>DB: Reload order + inventory
+  Service->>DB: Reserve every line; save order + audit
+  Service->>DB: COMMIT
+  API-->>UI: id + status
+  UI->>HTTP: Reload dashboard query
+  HTTP-->>UI: Orders, inventory, events, storage mode
+  UI-->>Person: BUF allocated; saved decision
+```
+
+### 1. The exact input and preview
+
+[seed.ts](../src/lib/seed.ts) defines Hudson Studio, destination NYC, four PH-100 desk phones and two HS-200 headsets. [model.ts](../src/lib/model.ts) supplies the names, weights and New York ZIP 10001. Total weight is `4 × 2.4 + 2 × 0.8 = 11.2 lb`.
+
+The inspector calls `previewOrder` for an order without a saved decision. Buffalo has 45 phones/28 headsets available; Reno has 32/40. Both are eligible. The quote simulator computes rounded great-circle distances of 292 and 2,394 miles:
+
+```text
+BUF: round(650 + 292  × 0.72 + 11.2 × 85) = 1812 cents
+RNO: round(650 + 2394 × 0.72 + 11.2 × 85) = 3326 cents
+Difference: 3326 - 1812 = 1514 cents
+```
+
+Synthetic transit is 1 day vs 4 days, but cost decides. A preview is an explanation of a possible decision, not a promise of stock.
+
+### 2. The click and browser request
+
+Dashboard's route button invokes:
+
+```tsx
+act(() => routeOrder(selected.id), 'Routing decision saved.');
+```
+
+[client.ts](../src/lib/client.ts) uses a GraphQL variable rather than assembling the ID into query syntax:
+
+```graphql
+mutation Route($id: ID!) {
+  routeOrder(id: $id) {
+    id
+    status
+  }
+}
+```
+
+Variables for this action are `{ "id": "FR-1041" }`. Fetch uses the relative `/api/graphql` URL, so it goes to the same host as the page and sends that host's workspace cookie. A GraphQL **mutation** asks to change data; a **query** asks to read data. The mutation returns only ID/status because `act` subsequently reloads the full dashboard.
+
+### 3. Transport and resolver boundaries
+
+The [route handler](../src/app/api/graphql/route.ts) accepts JSON POST, verifies origin, limits the body, parses JSON, validates or creates the UUID session cookie, and initializes its seed once. Apollo receives `{ service, sessionId }` as **context**, data shared with resolvers for this request. The `routeOrder` resolver delegates to `c.service.route(c.sessionId, id)`. No browser-supplied session ID is accepted as a GraphQL argument.
+
+[request-origin.ts](../src/lib/request-origin.ts) compares the supplied Origin to `request.nextUrl.protocol + '//' + Host`. NextURL normalizes loopback hostnames to localhost, so using its `.origin` directly would reject a legitimate numeric-loopback page. The actual Host preserves the spelling and port. `http://localhost:3000` and `http://127.0.0.1:3000` are each valid against themselves; one is rejected against the other. Foreign origins, wrong ports/schemes, `Origin: null`, and an empty Origin are rejected. A missing Origin remains allowed for CLI clients. X-Forwarded-Host does not create an allowlist. Reverse-proxy trust and forwarded protocol handling still need an explicit deployment design before production use.
+
+### 4. The transaction protects the promise
+
+`route` reads the order and gets both quotes before locking. Inside `locked`, the pg adapter runs `BEGIN`, then:
+
+```sql
+SELECT id FROM demo_sessions WHERE id=$1 FOR UPDATE;
+```
+
+`$1` is this workspace. A competing writer to the same workspace waits for that row lock. The service reloads the order, checks cancellation or an existing allocation, rereads inventory, then reevaluates with captured quotes. Inventory is `on_hand - reserved`; it is not taken from the browser's earlier preview.
+
+Buffalo is chosen. The service sorts the two item updates by SKU and runs the following for each item:
+
+```sql
+UPDATE inventory
+SET reserved=reserved+$4
+WHERE session_id=$1 AND warehouse_id=$2 AND sku=$3
+  AND on_hand-reserved >= $4
+RETURNING sku;
+```
+
+For HS-200, the values are workspace, BUF, HS-200, 2. For PH-100, the quantity is 4. If any update returns no row, it throws `CONFLICT`; the transaction rolls back previous item updates. SQL constraints provide a second defense against invalid inventory counts.
+
+The order becomes `ALLOCATED`, `warehouseId` becomes `BUF`, and its JSONB decision records candidates, costs, stock snapshots, reason, evaluation time and policy version. An `ALLOCATED` audit row says:
+
+```text
+BUF · $18.12 simulated shipping. Lowest eligible shipping cost. Ties resolve by warehouse code.
+```
+
+Saving the order and writing the event use that same transaction connection. If the audit write fails, reservations and the order save roll back too. Only after `COMMIT` does the successful mutation return.
+
+### 5. The visible result and inventory arithmetic
+
+| Warehouse / SKU | On-hand stays | Reserved before → after | Available before → after |
+| --------------- | ------------- | ----------------------- | ------------------------ |
+| BUF / PH-100    | 45            | 0 → 4                   | 45 → 41                  |
+| BUF / HS-200    | 28            | 0 → 2                   | 28 → 26                  |
+| RNO / PH-100    | 32            | 0 → 0                   | 32 → 32                  |
+| RNO / HS-200    | 40            | 0 → 0                   | 40 → 40                  |
+
+The dashboard query reads orders, inventory and events under the same workspace lock, so those three reads describe one coherent state. React receives new data, recomputes metrics, and displays “BUF allocated.” The inspector uses the saved decision instead of requesting a fresh preview. Its candidate available counts describe the decision-time snapshot, not a continuously updating inventory view; open Inventory for current counts.
+
+On an otherwise fresh workspace, allocated shipping becomes $18.12 and routing advantage becomes $15.14. Other allocated orders change those totals. They are sums of saved simulated decisions, not actual spend or historical savings.
+
+### 6. Retries, overrides and cancellation
+
+Routing FR-1041 again returns its allocation without reserving again or adding another allocation event. A valid Reno override first accounts for the order's owned reservation, checks Reno stock/quote, then atomically releases Buffalo and reserves Reno. It records `OVERRIDDEN` with the supplied reason and sets claimed advantage to zero. A failed override leaves Buffalo's reservation intact.
+
+Cancellation releases the active reservation once, makes the order `CANCELLED`, sets its active warehouse to null and retains the decision for history. A second cancellation returns without another release/event. Cancelled orders cannot be routed again. There is no shipment, payment, label, or reservation-expiration operation hidden behind these buttons.
+
+## 13. Hands-on exercises with solutions
+
+Work in a disposable learning workspace. Predict the outcome before running anything, then compare with the result. Do not use a shared live session's cookies or database connection.
+
+### Exercise 1: calculate the quote without a browser
+
+**Task:** reproduce both FR-1041 prices using the real simulator, not numbers typed into a mock response.
+
+**Solution:** run from the repository root; it reads only code and writes no database data:
+
+```bash
+node --import tsx --input-type=module <<'JS'
+import { SimulatedShippingProvider } from './src/lib/shipping.ts';
+const provider = new SimulatedShippingProvider();
+const items = [{ sku: 'PH-100', quantity: 4 }, { sku: 'HS-200', quantity: 2 }];
+for (const warehouse of ['BUF', 'RNO']) {
+  console.log(warehouse, await provider.quote(warehouse, 'NYC', items));
+}
+JS
+```
+
+Expected: BUF costCents 1812/transitDays 1/distanceMiles 292; RNO 3326/4/2394. Doubling weight increases both quotes equally for the same destination; it does not necessarily switch the winner.
+
+### Exercise 2: prove reservation is not shipment
+
+**Task:** allocate FR-1041, route it again, then cancel it twice in a fresh in-memory database. Predict on-hand, reserved and event counts.
+
+**Solution:** run the executable version in [walkthrough.test.ts](../tests/walkthrough.test.ts):
+
+```bash
+node --import tsx --test tests/walkthrough.test.ts
+```
+
+Expected: on-hand never changes; BUF reserves 4 phones/2 headsets, then both return to zero. Reno stays unchanged. Exactly one ALLOCATED and one CANCELLED event exist for the order. This test uses a new in-memory database and never connects to your running demo.
+
+### Exercise 3: change the UI without changing the business rule
+
+**Task:** in your learning copy, change `--orange` to a different accent and add a read-only “Available = on-hand − reserved” explanation to Inventory. Do not modify the service.
+
+**Solution:** edit the custom property in globals.css; add a paragraph inside the `tab === 'inventory'` branch in Dashboard. Refresh and inspect both desktop and mobile widths. Run format/typecheck and the browser suite. The quoted prices and reservations should be identical: styling does not belong in the routing policy. Check contrast before keeping a new accent; changing a color token can affect buttons, icons and focus indicators differently.
+
+### Exercise 4: explain stale preview handling
+
+**Task:** select order A, then B while A's preview is still pending. Why does A not replace B's decision when it finishes?
+
+**Solution:** trace the selection effect's `active` variable and cleanup. Cleanup for A sets its flag false; A's promise handler checks it before calling setDecision. This is display-race protection. The allocation transaction independently rereads inventory, so removing UI stale-result handling would not make overselling acceptable or remove the need for the server lock.
+
+### Exercise 5: find the audit ordering bug
+
+**Task:** predict PostgreSQL's output for this read-only SQL:
+
+```sql
+SELECT id::text AS id
+FROM (VALUES (9::bigint), (10::bigint), (100::bigint)) AS events(id)
+ORDER BY id DESC;
+```
+
+**Solution:** `9, 100, 10`. The unqualified ORDER BY names the text output alias. Change it to `ORDER BY events.id DESC`; now it is `100, 10, 9`. The application uses `ORDER BY audit_events.id DESC LIMIT 100`. It sorts by numeric insertion sequence, also breaking ties when timestamps are equal. It does not reorder events by arbitrary backdated timestamps.
+
+Run `node --import tsx --test tests/audit.test.ts`, then the PostgreSQL suite against a disposable database. The shared fixture inserts 125 events, compares all 100 returned IDs/details, and adds an event in another workspace to check isolation. The test catches both bad order and an incorrect latest-100 subset.
+
+### Exercise 6: protect the origin boundary
+
+**Task:** predict whether each request is accepted when Host is `127.0.0.1:3000` and protocol is HTTP.
+
+| Origin                      | Expected | Why                                                    |
+| --------------------------- | -------- | ------------------------------------------------------ |
+| `http://127.0.0.1:3000`     | Accept   | Exact match                                            |
+| `http://localhost:3000`     | Reject   | Different hostname, even though both can point locally |
+| `http://127.0.0.1:3001`     | Reject   | Different port                                         |
+| `https://127.0.0.1:3000`    | Reject   | Different scheme                                       |
+| `https://unrelated.example` | Reject   | Foreign origin                                         |
+| `null` or empty string      | Reject   | Supplied origin is not the expected origin             |
+| Header omitted              | Accept   | Existing CLI behavior; not proof of identity           |
+
+**Solution:** run `node --import tsx --test tests/request-origin.test.ts`. Then the HTTP checks in the browser suite verify the rule through a running Next server, including localhost and numeric loopback. Never “fix” a failing test by accepting every origin, using a string-prefix match, or trusting a caller's X-Forwarded-Host.
+
+### Exercise 7: add a feature with its failure case
+
+**Task:** design a “route cheapest” change where a missing Reno quote no longer blocks Buffalo. Is that a harmless simplification?
+
+**Solution:** no: without Reno's eligible quote, the service cannot claim Buffalo is cheapest. Preserve automatic REVIEW. If an operator chooses Buffalo anyway, use the existing override path with a reason and zero claimed advantage. Add a test like `an explicit override may accept a valid quote from an incomplete comparison`; never relabel an incomplete comparison as complete.
+
+## 14. Debug and review like the maintainer
+
+Follow one boundary at a time. If a button appears broken, inspect its disabled condition and notice first. Then inspect the HTTP response, including GraphQL `errors`; then the resolver/service; then database state. A 403 is a transport-origin problem, while REVIEW is a valid routing result. An exception during transaction work should leave the pre-operation state intact.
+
+To diagnose the historical loopback failure, inspect NextURL's hostname and the incoming Host: Next normalizes loopback aliases, while the browser sends the actual page origin. The earlier main checkout compared the normalized origin; current code preserves Host. Tests cover valid localhost/IPv4/IPv6 policy inputs, exact scheme/port boundaries and rejection of unrelated origins. IPv6 is unit-tested; the browser server is bound to IPv4 loopback. Do not infer a tested IPv6 listener or reverse-proxy deployment from that unit test.
+
+To diagnose activity order, compare the numeric database ID with the displayed text ID. Use read-only queries with explicit column qualification. Timestamps alone are not a safe tie-breaker because multiple writes in one transaction can share a timestamp. Audit IDs are sent as strings so JavaScript does not lose big integer precision; tests compare IDs with `BigInt` rather than converting them to Number.
+
+Before publishing a change, examine `git status`, the branch's upstream, `git diff`, and the current PR head. A dirty file can be another person's work, or an older uncommitted copy of work already pushed elsewhere. Preserve it until you know which. Run required checks after final edits, not only before them. A draft PR should say what changed, what was tested on its exact head, and which boundaries remain.
+
+What you can honestly say after completing this course: “I can trace a React action through GraphQL into a transactional routing service, explain stock eligibility and simulated quote ranking, show how reservations and audit events commit together, and reproduce contention and rollback tests.” What you cannot infer: real carrier performance, authenticated tenant isolation, measured cost savings, accessibility certification, or production readiness.

@@ -53,17 +53,61 @@ test('stock shortage, quote failure, audit trail and last-unit race', async ({ p
   await expect(page.getByRole('heading', { name: 'Decision trail' })).toBeVisible();
 });
 
-test('HTTP origin checks allow the current host and reject a foreign origin', async ({
+test('HTTP origin checks allow each local host and reject mismatched origins', async ({
   request,
   baseURL,
 }) => {
   const data = { query: '{ products { sku } }' };
-  const allowed = await request.post('/api/graphql', { headers: { origin: baseURL! }, data });
-  expect(allowed.status()).toBe(200);
-  expect((await allowed.json()).data.products).toHaveLength(5);
-  const rejected = await request.post('/api/graphql', {
-    headers: { origin: 'https://unrelated.example' },
-    data,
-  });
-  expect(rejected.status()).toBe(403);
+  for (const hostname of ['localhost', '127.0.0.1']) {
+    const url = new URL(baseURL!);
+    url.hostname = hostname;
+    const allowed = await request.post(`${url.origin}/api/graphql`, {
+      headers: { origin: url.origin },
+      data,
+    });
+    expect(allowed.status()).toBe(200);
+    expect((await allowed.json()).data.products).toHaveLength(5);
+  }
+  const mismatchedPort = new URL(baseURL!);
+  mismatchedPort.port = String(Number(mismatchedPort.port) + 1);
+  for (const origin of [
+    'https://unrelated.example',
+    baseURL!.replace('127.0.0.1', 'localhost'),
+    mismatchedPort.origin,
+    baseURL!.replace('http:', 'https:'),
+    'null',
+    '',
+  ]) {
+    const rejected = await request.post('/api/graphql', {
+      headers: { origin, 'x-forwarded-host': origin.replace(/^https?:\/\//, '') },
+      data,
+    });
+    expect(rejected.status(), origin).toBe(403);
+    expect(await rejected.json()).toEqual({ error: 'Cross-origin requests are not allowed.' });
+    expect(rejected.headers()['set-cookie']).toBeUndefined();
+  }
+});
+
+test('activity renders numeric event order after more than nine events', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('RNO recommended', { exact: true })).toBeVisible();
+  const ids: string[] = [];
+  for (let index = 0; index < 12; index++) {
+    const response = await page.request.post('/api/graphql', {
+      data: {
+        query: `mutation { createOrder(input: { customer: "History fixture", destinationId: NYC,
+          items: [{ sku: "PH-100", quantity: 1 }] }) { id } }`,
+      },
+    });
+    const result = await response.json();
+    expect(result.errors).toBeUndefined();
+    ids.push(result.data.createOrder.id);
+  }
+  await page.getByRole('button', { name: 'Activity log', exact: true }).click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  const articles = page.locator('.timeline article');
+  await expect(articles).toHaveCount(13);
+  await expect(articles.first().getByRole('button')).toHaveText(ids[11]);
+  await expect(page.locator('.timeline article button')).toHaveText([...ids].reverse());
+  await expect(articles.last()).toContainText('DEMO READY');
 });

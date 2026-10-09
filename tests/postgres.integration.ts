@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createDatabase, migrate } from '../src/lib/database';
 import { RoutingService } from '../src/lib/routing';
+import { assertRecentAuditHistory } from './audit-history';
+
+test('PostgreSQL audit history returns the newest 100 numeric IDs', async () => {
+  assert.ok(process.env.DATABASE_URL, 'Set DATABASE_URL to a disposable PostgreSQL database.');
+  const db = await createDatabase(process.env.DATABASE_URL);
+  try {
+    await migrate(db);
+    await assertRecentAuditHistory(db);
+  } finally {
+    await db.close();
+  }
+});
 
 test('separate PostgreSQL pools compete for one unit', async () => {
   assert.ok(process.env.DATABASE_URL, 'Set DATABASE_URL to a disposable PostgreSQL database.');

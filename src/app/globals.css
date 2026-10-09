@@ -1179,3 +1179,8 @@ form .button {
     animation: none;
   }
 }
+
+.warehouse-region {
+  font-size: 13px;
+  color: var(--muted);
+}

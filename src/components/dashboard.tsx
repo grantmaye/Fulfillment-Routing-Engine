@@ -143,7 +143,7 @@ export default function Dashboard() {
             Grant’s workspace<small>Fulfillment operations</small>
           </div>
         </div>
-        <div className="nav-label">WORKSPACE</div>
+
         <nav aria-label="Main navigation">
           {(
             [
@@ -211,7 +211,6 @@ export default function Dashboard() {
         <div className="content">
           <div className="page-heading">
             <div>
-              <div className="eyebrow">FULFILLMENT CONTROL</div>
               <h1>
                 {
                   {
@@ -412,7 +411,6 @@ export default function Dashboard() {
                     {selected ? (
                       <>
                         <div className="detail-heading">
-                          <span className="eyebrow">ROUTING INSPECTOR</span>
                           <div>
                             <h2>{selected.id}</h2>
                             <span className={`badge ${selected.status.toLowerCase()}`}>
@@ -607,7 +605,7 @@ export default function Dashboard() {
                     <section className="panel" key={warehouse.id}>
                       <div className="panel-heading">
                         <div>
-                          <div className="eyebrow">{warehouse.region}</div>
+                          <div className="warehouse-region">{warehouse.region}</div>
                           <h2>
                             {warehouse.name}, {warehouse.state}
                           </h2>
@@ -703,7 +701,6 @@ export default function Dashboard() {
               {tab === 'guide' && (
                 <div className="guide-grid">
                   <section className="panel guide">
-                    <div className="eyebrow">YOUR FIVE-MINUTE WALKTHROUGH</div>
                     <h2>Follow an order from stock to allocation.</h2>
                     <p>
                       This demo reconstructs a warehouse routing workflow with fictional data. Every
